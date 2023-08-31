@@ -122,17 +122,53 @@ class Field {
 
 class Value {
  public:
-  using ValueType =
-      std::variant<int8_t, uint8_t, int16_t, uint16_t, int32_t, uint32_t, int64_t, uint64_t, float,
-                   double, bool, char, std::string, std::vector<uint8_t>>;
-  Value(const Field& field, const std::vector<uint8_t>& value);
+  using NativeTypeVariant = std::variant<
+      int8_t, uint8_t, int16_t, uint16_t, int32_t, uint32_t, int64_t, uint64_t,
+      float, double, bool, char, std::vector<int8_t>, std::vector<uint8_t>, std::vector<int16_t>,
+      std::vector<uint16_t>, std::vector<int32_t>, std::vector<uint32_t>, std::vector<int64_t>,
+      std::vector<uint64_t>, std::vector<float>, std::vector<double>, std::vector<bool>,
+      std::string, MessageFormat>;
 
-  const ValueType& data() const { return _value; }
+  Value(const Field& field_ref, std::vector<uint8_t>& backing_ref) : _field_ref(field_ref), _backing_ref(backing_ref) {}
 
- private:
+  const NativeTypeVariant asNativeTypeVariant() const;
+
   template <typename T>
-  void assign(const std::vector<uint8_t>& value);
-  ValueType _value;
+  T as() const {
+    T res;
+    std::visit([](auto&& arg) {
+      T res = static_cast<T>(arg);
+    }, asNativeTypeVariant());
+    return res;
+  }
+
+  template <typename T>
+  T operator T() {
+    return as<T>();
+  }
+
+  private:
+  const Field &_field_ref;
+  std::vector<uint8_t> &_backing_ref;
+
+  template <typename T>
+  static T deserialize(const std::vector<uint8_t>& backing, int offset)
+  {
+    T v;
+    if (backing.size() - offset < sizeof(v)) throw ParsingException("Unexpected data type size");
+    memcpy(&v, backing.data(), sizeof(v));
+    return v;
+  }
+
+  template <typename T>
+  static std::vector<T> deserializeVector(const std::vector<uint8_t>& backing, int offset, int size) {
+    std::vector<T> res;
+    res.resize(size);
+    for (int i=0; i<size; i++) {
+      res[i] = deserialize<T>(backing, offset + i * sizeof(T));
+    }
+    return res;
+  }
 };
 
 class MessageInfo {

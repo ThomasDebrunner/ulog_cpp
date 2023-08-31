@@ -138,46 +138,85 @@ std::string Field::encode() const
   }
   return _type.name + ' ' + _name;
 }
-Value::Value(const Field& field, const std::vector<uint8_t>& value)
+const Value::NativeTypeVariant Value::asNativeTypeVariant() const
 {
-  if (field.arrayLength() == -1 && field.type().type == Field::BasicType::INT8) {
-    assign<int8_t>(value);
-  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::UINT8) {
-    assign<uint8_t>(value);
-  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::UINT8) {
-    assign<int16_t>(value);
-  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::INT16) {
-    assign<uint16_t>(value);
-  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::UINT16) {
-    assign<int32_t>(value);
-  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::INT32) {
-    assign<uint32_t>(value);
-  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::INT64) {
-    assign<int64_t>(value);
-  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::UINT64) {
-    assign<uint64_t>(value);
-  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::FLOAT) {
-    assign<float>(value);
-  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::DOUBLE) {
-    assign<double>(value);
-  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::BOOL) {
-    assign<bool>(value);
-  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::CHAR) {
-    assign<char>(value);
-  } else if (field.arrayLength() > 0 && field.type().type == Field::BasicType::CHAR) {
-    _value = std::string(reinterpret_cast<const char*>(value.data()), value.size());
-  } else {
-    _value = value;
+  if (_field_ref.type().type == Field::BasicType::RECURSIVE) {
+    // return something interesting here
+    throw std::runtime_error("NOT IMPLEMENTED");
   }
+
+  if (_field_ref.arrayLength() == -1) {
+    switch (_field_ref.type().type) {
+      case Field::BasicType::INT8:
+        return deserialize<int8_t>(_backing_ref, _field_ref.offsetInMessage());
+      case Field::BasicType::UINT8:
+        return deserialize<uint8_t>(_backing_ref, _field_ref.offsetInMessage());
+      case Field::BasicType::INT16:
+        return deserialize<int16_t>(_backing_ref, _field_ref.offsetInMessage());
+      case Field::BasicType::UINT16:
+        return deserialize<uint16_t>(_backing_ref, _field_ref.offsetInMessage());
+      case Field::BasicType::INT32:
+        return deserialize<int32_t>(_backing_ref, _field_ref.offsetInMessage());
+      case Field::BasicType::UINT32:
+        return deserialize<uint32_t>(_backing_ref, _field_ref.offsetInMessage());
+      case Field::BasicType::INT64:
+        return deserialize<int64_t>(_backing_ref, _field_ref.offsetInMessage());
+      case Field::BasicType::UINT64:
+        return deserialize<uint64_t>(_backing_ref, _field_ref.offsetInMessage());
+      case Field::BasicType::FLOAT:
+        return deserialize<float>(_backing_ref, _field_ref.offsetInMessage());
+      case Field::BasicType::DOUBLE:
+        return deserialize<double>(_backing_ref, _field_ref.offsetInMessage());
+      case Field::BasicType::BOOL:
+        return deserialize<bool>(_backing_ref, _field_ref.offsetInMessage());
+      case Field::BasicType::CHAR:
+        return deserialize<char>(_backing_ref, _field_ref.offsetInMessage());
+    }
+  } else {
+    switch (_field_ref.type().type) {
+      case Field::BasicType::INT8:
+        return deserializeVector<int8_t>(_backing_ref, _field_ref.offsetInMessage(),
+                                         _field_ref.arrayLength());
+      case Field::BasicType::UINT8:
+        return deserializeVector<uint8_t>(_backing_ref, _field_ref.offsetInMessage(),
+                                          _field_ref.arrayLength());
+      case Field::BasicType::INT16:
+        return deserializeVector<int16_t>(_backing_ref, _field_ref.offsetInMessage(),
+                                          _field_ref.arrayLength());
+      case Field::BasicType::UINT16:
+        return deserializeVector<uint16_t>(_backing_ref, _field_ref.offsetInMessage(),
+                                           _field_ref.arrayLength());
+      case Field::BasicType::INT32:
+        return deserializeVector<int32_t>(_backing_ref, _field_ref.offsetInMessage(),
+                                          _field_ref.arrayLength());
+      case Field::BasicType::UINT32:
+        return deserializeVector<uint32_t>(_backing_ref, _field_ref.offsetInMessage(),
+                                           _field_ref.arrayLength());
+      case Field::BasicType::INT64:
+        return deserializeVector<int64_t>(_backing_ref, _field_ref.offsetInMessage(),
+                                          _field_ref.arrayLength());
+      case Field::BasicType::UINT64:
+        return deserializeVector<uint64_t>(_backing_ref, _field_ref.offsetInMessage(),
+                                           _field_ref.arrayLength());
+      case Field::BasicType::FLOAT:
+        return deserializeVector<float>(_backing_ref, _field_ref.offsetInMessage(),
+                                        _field_ref.arrayLength());
+      case Field::BasicType::DOUBLE:
+        return deserializeVector<double>(_backing_ref, _field_ref.offsetInMessage(),
+                                         _field_ref.arrayLength());
+      case Field::BasicType::BOOL:
+        return deserializeVector<bool>(_backing_ref, _field_ref.offsetInMessage(),
+                                       _field_ref.arrayLength());
+      case Field::BasicType::CHAR:
+        if (_backing_ref.size() < _field_ref.arrayLength()) {
+          throw ParsingException("Decoding fault, memory too short");
+        }
+        return std::string((const char *)(_backing_ref.data()), _field_ref.arrayLength());
+    }
+  }
+  return deserialize<uint8_t>(_backing_ref, _field_ref.offsetInMessage());
 }
-template <typename T>
-void Value::assign(const std::vector<uint8_t>& value)
-{
-  T v;
-  if (value.size() != sizeof(v)) throw ParsingException("Unexpected data type size");
-  memcpy(&v, value.data(), sizeof(v));
-  _value = v;
-}
+
 MessageInfo::MessageInfo(Field field, std::vector<uint8_t> value, bool is_multi, bool continued)
     : _field(std::move(field)), _value(std::move(value)), _continued(continued), _is_multi(is_multi)
 {

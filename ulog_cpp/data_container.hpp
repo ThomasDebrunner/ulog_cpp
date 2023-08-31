@@ -9,7 +9,6 @@
 #include <memory>
 
 #include "data_handler_interface.hpp"
-#include "formatted_data.hpp"
 
 namespace ulog_cpp {
 
@@ -19,6 +18,7 @@ class DataContainer : public DataHandlerInterface {
     Header,   ///< keep header in memory
     FullLog,  ///< keep full log in memory
   };
+  
 
   class Subscription {
    public:

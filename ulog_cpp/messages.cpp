@@ -88,41 +88,45 @@ Field::Field(const char* str, int len, int offset,
   _name = key_value.substr(first_space + 1);
   // Check for arrays
   const std::string::size_type bracket = key_array.find('[');
+  std::string type_name;
   if (bracket == std::string::npos) {
-    _type = key_array;
+    type_name = key_array;
   } else {
-    _type = key_array.substr(0, bracket);
+    type_name = key_array.substr(0, bracket);
     if (key_array[key_array.length() - 1] != ']') {
       throw ParsingException("Invalid key format (missing ])");
     }
     _array_length = std::stoi(std::string(key_array.substr(bracket + 1)));
   }
-  auto it_basic = kBasicTypes.find(_type);
+  auto it_basic = kBasicTypes.find(type_name);
   if (it_basic != kBasicTypes.end()) {
-    _own_size_bytes = it_basic->second * ((_array_length == -1) ? 1: _array_length);
+    _type = it_basic->second;
   } else {
     if (existing_type_map == nullptr) {
-      throw ParsingException("Invalid type (not a basic type) " + _type);
+      throw ParsingException("Invalid type (not a basic type) " + type_name);
     }
 
-    auto it_existing = existing_type_map->find(_type);
+    auto it_existing = existing_type_map->find(type_name);
     if (it_existing == existing_type_map->end()) {
-      throw ParsingException("Invalid type " + _type);
+      throw ParsingException("Invalid type " + type_name);
     }
+    _type = {type_name, Field::BasicType::RECURSIVE, 0};
     _sub_type = &(it_existing->second);
-    _own_size_bytes = -1;
   }
 }
 
-const std::map<std::string, int> Field::kBasicTypes{
-    {"int8_t", 1},  {"uint8_t", 1},  {"int16_t", 2}, {"uint16_t", 2},
-    {"int32_t", 4}, {"uint32_t", 4}, {"int64_t", 8}, {"uint64_t", 8},
-    {"float", 4},   {"double", 8},   {"bool", 1},    {"char", 1}};
+const std::map<std::string, std::tuple<Field::BasicType, int>> Field::kBasicTypes{
+    {"int8_t", {"int8_t", Field::BasicType::INT8, 1}},  {"uint8_t", {"uint8_t", Field::BasicType::UINT8, 1}},
+    {"int16_t", {"int16_t", Field::BasicType::INT16, 2}}, {"uint16_t", {"uint16_t", Field::BasicType::UINT16, 2}},
+    {"int32_t", {"int32_t", Field::BasicType::INT32, 4}}, {"uint32_t", {"uint32_t", Field::BasicType::UINT32, 4}},
+    {"int64_t", {"int64_t", Field::BasicType::INT64, 8}}, {"uint64_t", {"uint64_t", Field::BasicType::UINT64, 8}},
+    {"float", {"float", Field::BasicType::FLOAT, 4}},   {"double", {"double", Field::BasicType::DOUBLE, 8}},
+    {"bool", {"bool", Field::BasicType::BOOL, 1}},    {"char", {"char", Field::BasicType::CHAR, 1}}};
 
 
 int Field::sizeBytes() const  {
-  if (_sub_type == nullptr) {
-    return _own_size_bytes;
+  if (_type.type != Field::BasicType::RECURSIVE) {
+    return _type.size * ((_array_length == -1) ? 1: _array_length);
   }
   return _sub_type->sizeBytes();
 }
@@ -130,37 +134,37 @@ int Field::sizeBytes() const  {
 std::string Field::encode() const
 {
   if (_array_length >= 0) {
-    return _type + '[' + std::to_string(_array_length) + ']' + ' ' + _name;
+    return _type.name + '[' + std::to_string(_array_length) + ']' + ' ' + _name;
   }
-  return _type + ' ' + _name;
+  return _type.name + ' ' + _name;
 }
 Value::Value(const Field& field, const std::vector<uint8_t>& value)
 {
-  if (field.arrayLength() == -1 && field.type() == "int8_t") {
+  if (field.arrayLength() == -1 && field.type().type == Field::BasicType::INT8) {
     assign<int8_t>(value);
-  } else if (field.arrayLength() == -1 && field.type() == "uint8_t") {
+  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::UINT8) {
     assign<uint8_t>(value);
-  } else if (field.arrayLength() == -1 && field.type() == "int16_t") {
+  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::UINT8) {
     assign<int16_t>(value);
-  } else if (field.arrayLength() == -1 && field.type() == "uint16_t") {
+  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::INT16) {
     assign<uint16_t>(value);
-  } else if (field.arrayLength() == -1 && field.type() == "int32_t") {
+  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::UINT16) {
     assign<int32_t>(value);
-  } else if (field.arrayLength() == -1 && field.type() == "uint32_t") {
+  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::INT32) {
     assign<uint32_t>(value);
-  } else if (field.arrayLength() == -1 && field.type() == "int64_t") {
+  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::INT64) {
     assign<int64_t>(value);
-  } else if (field.arrayLength() == -1 && field.type() == "uint64_t") {
+  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::UINT64) {
     assign<uint64_t>(value);
-  } else if (field.arrayLength() == -1 && field.type() == "float") {
+  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::FLOAT) {
     assign<float>(value);
-  } else if (field.arrayLength() == -1 && field.type() == "double") {
+  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::DOUBLE) {
     assign<double>(value);
-  } else if (field.arrayLength() == -1 && field.type() == "bool") {
+  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::BOOL) {
     assign<bool>(value);
-  } else if (field.arrayLength() == -1 && field.type() == "char") {
+  } else if (field.arrayLength() == -1 && field.type().type == Field::BasicType::CHAR) {
     assign<char>(value);
-  } else if (field.arrayLength() > 0 && field.type() == "char") {
+  } else if (field.arrayLength() > 0 && field.type().type == Field::BasicType::CHAR) {
     _value = std::string(reinterpret_cast<const char*>(value.data()), value.size());
   } else {
     _value = value;

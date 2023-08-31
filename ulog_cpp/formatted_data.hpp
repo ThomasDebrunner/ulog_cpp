@@ -7,28 +7,31 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
-#include <functional>
-#include <map>
-#include <string>
-#include <utility>
 #include <variant>
-#include <vector>
 
 #include "messages.hpp"
 
 namespace ulog_cpp {
 
-class FormattedData {
- public:
-  FormattedData(Data data, MessageFormat &format) :
-    _data{std::move(data)}, _format_ref(format) {}
+using NativeTypeVariant = std::variant<
+    int8_t, uint8_t, int16_t, uint16_t, int32_t, uint32_t, int64_t, uint64_t,
+    float, double, bool, char, std::vector<int8_t>, std::vector<uint8_t>, std::vector<int16_t>,
+        std::vector<uint16_t>, std::vector<int32_t>, std::vector<uint32_t>, std::vector<int64_t>,
+            std::vector<uint64_t>, std::vector<float>, std::vector<double>,
+                std::string, MessageFormat>;
 
-//  void get(const std::string &key) {
-//    _format_ref.fields().operator[](key)
-//  }
+class FormattedMessage {
+ public:
+  FormattedData(Data &data, MessageFormat &format) :
+    _data_ref(data), _format_ref(format) {}
+
+
+  NativeTypeVariant getAsNativeTypeVariant(const Field &field) {
+
+  }
 
  private:
-  Data _data;
+  Data& _data_ref;
   MessageFormat& _format_ref;
 };
 

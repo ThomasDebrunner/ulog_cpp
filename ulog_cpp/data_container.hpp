@@ -22,17 +22,25 @@ class DataContainer : public DataHandlerInterface {
 
   class Subscription {
    public:
-    Subscription(AddLoggedMessage add_logged_message, std::vector<Data> data, MessageFormat &format_ref)
-        : _add_logged_message(std::move(add_logged_message)), _data(std::move(data)) {
+    Subscription(AddLoggedMessage add_logged_message, std::vector<Data> samples, MessageFormat &format_ref)
+        : _add_logged_message(std::move(add_logged_message)), _samples(std::move(samples)) {
     }
 
     void addSample(const Data &sample) {
-      _data.emplace_back(sample);
+      _samples.emplace_back(sample);
+    }
+
+    const AddLoggedMessage& addLoggedMessage() const {
+      return _add_logged_message;
+    }
+
+    const std::vector<Data>& rawSamples() const {
+      return _samples;
     }
 
    private:
     AddLoggedMessage _add_logged_message;
-    std::vector<Data> _data;
+    std::vector<Data> _samples;
   };
 
   explicit DataContainer(StorageConfig storage_config);

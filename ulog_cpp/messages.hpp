@@ -51,14 +51,39 @@ class MessageFormat; // forward declaration
 
 class Field {
  public:
-  Field() = default;
+
+  enum class BasicType {
+    INT8,
+    UINT8,
+    INT16,
+    UINT16,
+    INT32,
+    UINT32,
+    INT64,
+    UINT64,
+    FLOAT,
+    DOUBLE,
+    CHAR,
+    BOOL,
+    RECURSIVE,
+  };
+
+  struct BasicTypeAttrs {
+    std::string name;
+    BasicType type;
+    int size;
+
+    BasicTypeAttrs(std::string name, BasicType type_, int size_) : name(std::move(name)),
+          type(type_), size(size_) {}
+  };
+
+  static const std::map<std::string, std::tuple<BasicType, BasicTypeAttrs>> kBasicTypes;
+
   Field(const char* str, int len, int offset,
         const std::map<const std::string, const MessageFormat>* existing_type_map = nullptr);
 
-  static const std::map<std::string, int> kBasicTypes;
-
   Field(std::string type_str, std::string name_str, int array_length_int = -1)
-      : _type(std::move(type_str)), _array_length(array_length_int), _name(std::move(name_str))
+      : _type_string(std::move(type_str)), _array_length(array_length_int), _name(std::move(name_str))
   {
   }
 
@@ -66,10 +91,10 @@ class Field {
 
   bool operator==(const Field& field) const
   {
-    return _type == field._type && _array_length == field._array_length && _name == field._name;
+    return _type.name == field._type.name && _array_length == field._array_length && _name == field._name;
   }
 
-  inline const std::string& type() const {
+  inline const BasicTypeAttrs& type() const {
     return _type;
   }
 
@@ -88,10 +113,9 @@ class Field {
   int sizeBytes() const;
 
  private:
-  std::string _type;
+  BasicTypeAttrs _type;
   int _array_length{-1};  ///< -1 means not-an-array
   int _offset_in_message_bytes;
-  int _own_size_bytes;
   const MessageFormat* _sub_type{nullptr};
   std::string _name;
 };

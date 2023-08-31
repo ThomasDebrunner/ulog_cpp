@@ -6,6 +6,7 @@
 
 #include <unordered_map>
 #include <vector>
+#include <memory>
 
 #include "data_handler_interface.hpp"
 
@@ -21,6 +22,9 @@ class DataContainer : public DataHandlerInterface {
   struct Subscription {
     AddLoggedMessage add_logged_message;
     std::vector<Data> data;
+
+    Subscription(AddLoggedMessage add_logged_message, std::vector<Data> data)
+        : add_logged_message(std::move(add_logged_message)), data(std::move(data)) {}
   };
 
   explicit DataContainer(StorageConfig storage_config);
@@ -58,7 +62,6 @@ class DataContainer : public DataHandlerInterface {
   }
   const std::vector<Parameter>& changedParameters() const { return _changed_parameters; }
   const std::vector<Logging>& logging() const { return _logging; }
-  const std::unordered_map<uint16_t, Subscription>& subscriptions() const { return _subscriptions; }
   const std::vector<Dropout>& dropouts() const { return _dropouts; }
 
  private:
@@ -75,7 +78,8 @@ class DataContainer : public DataHandlerInterface {
   std::map<std::string, Parameter> _initial_parameters;
   std::map<std::string, ParameterDefault> _default_parameters;
   std::vector<Parameter> _changed_parameters;
-  std::unordered_map<uint16_t, Subscription> _subscriptions;
+  std::unordered_map<uint16_t, std::shared_ptr<Subscription>> _subscriptions_by_message_id;
+  std::unordered_map<std::string, std::shared_ptr<Subscription>> _subscriptions_by_name;
   std::vector<Logging> _logging;
   std::vector<Dropout> _dropouts;
 };

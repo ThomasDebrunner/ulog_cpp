@@ -40,14 +40,14 @@ SimpleWriter::~SimpleWriter()
   }
 }
 
-void SimpleWriter::writeMessageFormat(const std::string& name, const std::vector<Field>& fields)
+void SimpleWriter::writeMessageFormat(const std::string& name, const std::map<std::string, Field>& fields)
 {
   if (_header_complete) {
     throw UsageException("Header already complete");
   }
   // Ensure the first field is the 64 bit timestamp. This is a bit stricter than what ULog requires
-  if (fields.empty() || fields[0].name != "timestamp" || fields[0].type != "uint64_t" ||
-      fields[0].array_length != -1) {
+  if (fields.empty() || fields.begin()->second.name() != "timestamp" || fields.begin()->second.type() != "uint64_t" ||
+      fields.begin()->second.arrayLength() != -1) {
     throw UsageException("First message field must be 'uint64_t timestamp'");
   }
   if (_formats.find(name) != _formats.end()) {
@@ -58,26 +58,28 @@ void SimpleWriter::writeMessageFormat(const std::string& name, const std::vector
   if (!std::regex_match(name, kFormatNameRegex)) {
     throw UsageException("Invalid name: " + name + ", valid regex: " + kFormatNameRegexStr);
   }
-  for (const auto& field : fields) {
-    if (!std::regex_match(field.name, kFieldNameRegex)) {
-      throw UsageException("Invalid field name: " + field.name +
+  for (const auto& it : fields) {
+    const auto& field = it.second;
+    if (!std::regex_match(field.name(), kFieldNameRegex)) {
+      throw UsageException("Invalid field name: " + field.name() +
                            ", valid regex: " + kFieldNameRegexStr);
     }
   }
 
   // Check field types and verify padding
   unsigned message_size = 0;
-  for (const auto& field : fields) {
-    const auto& basic_type_iter = Field::kBasicTypes.find(field.type);
+  for (const auto& it : fields) {
+    const auto& field = it.second;
+    const auto& basic_type_iter = Field::kBasicTypes.find(field.type());
     if (basic_type_iter == Field::kBasicTypes.end()) {
-      throw UsageException("Invalid field type (nested formats are not supported): " + field.type);
+      throw UsageException("Invalid field type (nested formats are not supported): " + field.type());
     }
-    const int array_size = field.array_length <= 0 ? 1 : field.array_length;
+    const int array_size = field.arrayLength() <= 0 ? 1 : field.arrayLength();
     if (message_size % basic_type_iter->second != 0) {
       throw UsageException(
           "struct requires padding, reorder fields by decreasing type size. Padding before "
           "field: " +
-          field.name);
+          field.name());
     }
     message_size += array_size * basic_type_iter->second;
   }

@@ -34,16 +34,16 @@ void DataContainer::messageInfo(const MessageInfo& message_info)
   }
   if (message_info.isMulti()) {
     if (message_info.isContinued()) {
-      auto& messages = _message_info_multi[message_info.field().name];
+      auto& messages = _message_info_multi[message_info.field().name()];
       if (messages.empty()) {
         throw ParsingException("info_multi msg is continued, but no previous");
       }
       messages[messages.size() - 1].push_back(message_info);
     } else {
-      _message_info_multi[message_info.field().name].push_back({message_info});
+      _message_info_multi[message_info.field().name()].push_back({message_info});
     }
   } else {
-    _message_info.insert({message_info.field().name, message_info});
+    _message_info.insert({message_info.field().name(), message_info});
   }
 }
 void DataContainer::messageFormat(const MessageFormat& message_format)
@@ -61,12 +61,12 @@ void DataContainer::parameter(const Parameter& parameter)
   if (_header_complete) {
     _changed_parameters.push_back(parameter);
   } else {
-    _initial_parameters.insert({parameter.field().name, parameter});
+    _initial_parameters.insert({parameter.field().name(), parameter});
   }
 }
 void DataContainer::parameterDefault(const ParameterDefault& parameter_default)
 {
-  _default_parameters.insert({parameter_default.field().name, parameter_default});
+  _default_parameters.insert({parameter_default.field().name(), parameter_default});
 }
 void DataContainer::addLoggedMessage(const AddLoggedMessage& add_logged_message)
 {
@@ -103,7 +103,7 @@ void DataContainer::data(const Data& data)
   if (iter == _subscriptions_by_message_id.end()) {
     throw ParsingException("Invalid subscription");
   }
-  iter->second->data.emplace_back(std::move(data));
+  iter->second->addSample(std::move(data));
 }
 void DataContainer::dropout(const Dropout& dropout)
 {

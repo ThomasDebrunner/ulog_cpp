@@ -9,6 +9,7 @@
 #include <memory>
 
 #include "data_handler_interface.hpp"
+#include "formatted_data.hpp"
 
 namespace ulog_cpp {
 
@@ -19,12 +20,19 @@ class DataContainer : public DataHandlerInterface {
     FullLog,  ///< keep full log in memory
   };
 
-  struct Subscription {
-    AddLoggedMessage add_logged_message;
-    std::vector<Data> data;
+  class Subscription {
+   public:
+    Subscription(AddLoggedMessage add_logged_message, std::vector<Data> data, MessageFormat &format_ref)
+        : _add_logged_message(std::move(add_logged_message)), _data(std::move(data)) {
+    }
 
-    Subscription(AddLoggedMessage add_logged_message, std::vector<Data> data)
-        : add_logged_message(std::move(add_logged_message)), data(std::move(data)) {}
+    void addSample(const Data &sample) {
+      _data.emplace_back(sample);
+    }
+
+   private:
+    AddLoggedMessage _add_logged_message;
+    std::vector<Data> _data;
   };
 
   explicit DataContainer(StorageConfig storage_config);
@@ -64,6 +72,10 @@ class DataContainer : public DataHandlerInterface {
   const std::vector<Logging>& logging() const { return _logging; }
   const std::vector<Dropout>& dropouts() const { return _dropouts; }
 
+  const std::map<std::string, std::shared_ptr<Subscription>>& subscriptions() {
+    return _subscriptions_by_name;
+  }
+
  private:
   const StorageConfig _storage_config;
 
@@ -78,8 +90,8 @@ class DataContainer : public DataHandlerInterface {
   std::map<std::string, Parameter> _initial_parameters;
   std::map<std::string, ParameterDefault> _default_parameters;
   std::vector<Parameter> _changed_parameters;
-  std::unordered_map<uint16_t, std::shared_ptr<Subscription>> _subscriptions_by_message_id;
-  std::unordered_map<std::string, std::shared_ptr<Subscription>> _subscriptions_by_name;
+  std::map<uint16_t, std::shared_ptr<Subscription>> _subscriptions_by_message_id;
+  std::map<std::string, std::shared_ptr<Subscription>> _subscriptions_by_name;
   std::vector<Logging> _logging;
   std::vector<Dropout> _dropouts;
 };

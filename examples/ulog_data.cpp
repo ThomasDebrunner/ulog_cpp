@@ -45,25 +45,28 @@ int main(int argc, char** argv)
 
   // Read out some data
   // TODO: create a simpler API for this
-  const std::string message = "multirotor_motor_limits";
-  printf("%s timestamps: ", message.c_str());
-  for (const auto& sub : data_container->subscriptions()) {
-    if (sub.second.add_logged_message.messageName() == message) {
-      const auto& fields = data_container->messageFormats().at(message).fields();
-      // Expect the first field to be the timestamp
-      if (fields[0].name != "timestamp") {
-        printf("Error: first field is not 'timestamp'\n");
-        return -1;
-      }
-      for (const auto& data : sub.second.data) {
-        auto value = ulog_cpp::Value(
-            fields[0],
-            std::vector<uint8_t>(data.data().begin(), data.data().begin() + sizeof(uint64_t)));
-        printf("%lu, ", std::get<uint64_t>(value.data()));
-      }
-    }
-  }
-  printf("\n");
+
+  const auto& subscription = data_container->subscriptions().at("multirotor_motor_limits");
+
+//  const std::string message = "multirotor_motor_limits";
+//  printf("%s timestamps: ", message.c_str());
+//  for (const auto& sub : data_container->subscriptions()) {
+//    if (sub.second.add_logged_message.messageName() == message) {
+//      const auto& fields = data_container->messageFormats().at(message).fields();
+//      // Expect the first field to be the timestamp
+//      if (fields.begin()->second.name() != "timestamp") {
+//        printf("Error: first field is not 'timestamp'\n");
+//        return -1;
+//      }
+//      for (const auto& data : sub.second.data) {
+//        auto value = ulog_cpp::Value(
+//            fields.at("timestamp"),
+//            std::vector<uint8_t>(data.data().begin(), data.data().begin() + sizeof(uint64_t)));
+//        printf("%lu, ", std::get<uint64_t>(value.data()));
+//      }
+//    }
+//  }
+//  printf("\n");
 
   return 0;
 }

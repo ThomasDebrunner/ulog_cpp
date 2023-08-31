@@ -45,7 +45,7 @@ void FileHeader::serialize(const DataWriteCB& writer) const
   }
 }
 
-MessageInfo::MessageInfo(const uint8_t* msg, bool is_multi) : _is_multi(is_multi)
+MessageInfo::MessageInfo(const uint8_t* msg, bool is_multi, const std::map<const std::string, const MessageFormat> *existing_type_map) : _is_multi(is_multi)
 {
   if (is_multi) {
     const ulog_message_info_multiple_s* info_multi =
@@ -55,7 +55,7 @@ MessageInfo::MessageInfo(const uint8_t* msg, bool is_multi) : _is_multi(is_multi
     if (info_multi->key_len > info_multi->msg_size - 2) {
       throw ParsingException("Key too long");  // invalid
     }
-    _field = Field(info_multi->key_value_str, info_multi->key_len);
+    _field = Field(info_multi->key_value_str, info_multi->key_len, 0, existing_type_map);
     initValues(info_multi->key_value_str + info_multi->key_len,
                info_multi->msg_size - info_multi->key_len - 2);
   } else {
@@ -64,7 +64,7 @@ MessageInfo::MessageInfo(const uint8_t* msg, bool is_multi) : _is_multi(is_multi
     if (info->key_len > info->msg_size - 1) {
       throw ParsingException("Key too long");  // invalid
     }
-    _field = Field(info->key_value_str, info->key_len);
+    _field = Field(info->key_value_str, info->key_len, 0, existing_type_map);
     initValues(info->key_value_str + info->key_len, info->msg_size - info->key_len - 1);
   }
 }
@@ -73,8 +73,10 @@ void MessageInfo::initValues(const char* values, int len)
   _value.resize(len);
   memcpy(_value.data(), values, len);
 }
-Field::Field(const char* str, int len)
+Field::Field(const char* str, int len, int offset,
+             const std::map<const std::string, const MessageFormat> *existing_type_map)
 {
+  _offset_in_message_bytes = offset;
   // Format: '<type>[len] <name>' or '<type> <name>'
   // Find first space
   const std::string_view key_value{str, static_cast<std::string::size_type>(len)};
@@ -83,17 +85,32 @@ Field::Field(const char* str, int len)
     throw ParsingException("Invalid key format");
   }
   const std::string_view key_array = key_value.substr(0, first_space);
-  name = key_value.substr(first_space + 1);
+  _name = key_value.substr(first_space + 1);
   // Check for arrays
   const std::string::size_type bracket = key_array.find('[');
   if (bracket == std::string::npos) {
-    type = key_array;
+    _type = key_array;
   } else {
-    type = key_array.substr(0, bracket);
+    _type = key_array.substr(0, bracket);
     if (key_array[key_array.length() - 1] != ']') {
       throw ParsingException("Invalid key format (missing ])");
     }
-    array_length = std::stoi(std::string(key_array.substr(bracket + 1)));
+    _array_length = std::stoi(std::string(key_array.substr(bracket + 1)));
+  }
+  auto it_basic = kBasicTypes.find(_type);
+  if (it_basic != kBasicTypes.end()) {
+    _own_size_bytes = it_basic->second * ((_array_length == -1) ? 1: _array_length);
+  } else {
+    if (existing_type_map == nullptr) {
+      throw ParsingException("Invalid type (not a basic type) " + _type);
+    }
+
+    auto it_existing = existing_type_map->find(_type);
+    if (it_existing == existing_type_map->end()) {
+      throw ParsingException("Invalid type " + _type);
+    }
+    _sub_type = &(it_existing->second);
+    _own_size_bytes = -1;
   }
 }
 
@@ -102,40 +119,48 @@ const std::map<std::string, int> Field::kBasicTypes{
     {"int32_t", 4}, {"uint32_t", 4}, {"int64_t", 8}, {"uint64_t", 8},
     {"float", 4},   {"double", 8},   {"bool", 1},    {"char", 1}};
 
+
+int Field::sizeBytes() const  {
+  if (_sub_type == nullptr) {
+    return _own_size_bytes;
+  }
+  return _sub_type->sizeBytes();
+}
+
 std::string Field::encode() const
 {
-  if (array_length >= 0) {
-    return type + '[' + std::to_string(array_length) + ']' + ' ' + name;
+  if (_array_length >= 0) {
+    return _type + '[' + std::to_string(_array_length) + ']' + ' ' + _name;
   }
-  return type + ' ' + name;
+  return _type + ' ' + _name;
 }
 Value::Value(const Field& field, const std::vector<uint8_t>& value)
 {
-  if (field.array_length == -1 && field.type == "int8_t") {
+  if (field.arrayLength() == -1 && field.type() == "int8_t") {
     assign<int8_t>(value);
-  } else if (field.array_length == -1 && field.type == "uint8_t") {
+  } else if (field.arrayLength() == -1 && field.type() == "uint8_t") {
     assign<uint8_t>(value);
-  } else if (field.array_length == -1 && field.type == "int16_t") {
+  } else if (field.arrayLength() == -1 && field.type() == "int16_t") {
     assign<int16_t>(value);
-  } else if (field.array_length == -1 && field.type == "uint16_t") {
+  } else if (field.arrayLength() == -1 && field.type() == "uint16_t") {
     assign<uint16_t>(value);
-  } else if (field.array_length == -1 && field.type == "int32_t") {
+  } else if (field.arrayLength() == -1 && field.type() == "int32_t") {
     assign<int32_t>(value);
-  } else if (field.array_length == -1 && field.type == "uint32_t") {
+  } else if (field.arrayLength() == -1 && field.type() == "uint32_t") {
     assign<uint32_t>(value);
-  } else if (field.array_length == -1 && field.type == "int64_t") {
+  } else if (field.arrayLength() == -1 && field.type() == "int64_t") {
     assign<int64_t>(value);
-  } else if (field.array_length == -1 && field.type == "uint64_t") {
+  } else if (field.arrayLength() == -1 && field.type() == "uint64_t") {
     assign<uint64_t>(value);
-  } else if (field.array_length == -1 && field.type == "float") {
+  } else if (field.arrayLength() == -1 && field.type() == "float") {
     assign<float>(value);
-  } else if (field.array_length == -1 && field.type == "double") {
+  } else if (field.arrayLength() == -1 && field.type() == "double") {
     assign<double>(value);
-  } else if (field.array_length == -1 && field.type == "bool") {
+  } else if (field.arrayLength() == -1 && field.type() == "bool") {
     assign<bool>(value);
-  } else if (field.array_length == -1 && field.type == "char") {
+  } else if (field.arrayLength() == -1 && field.type() == "char") {
     assign<char>(value);
-  } else if (field.array_length > 0 && field.type == "char") {
+  } else if (field.arrayLength() > 0 && field.type() == "char") {
     _value = std::string(reinterpret_cast<const char*>(value.data()), value.size());
   } else {
     _value = value;
@@ -155,23 +180,19 @@ MessageInfo::MessageInfo(Field field, std::vector<uint8_t> value, bool is_multi,
 }
 MessageInfo::MessageInfo(const std::string& key, int32_t value)
 {
-  _field.name = key;
-  _field.type = "int32_t";
+  _field = {"int32_t", key};
   _value.resize(sizeof(value));
   memcpy(_value.data(), &value, sizeof(value));
 }
 MessageInfo::MessageInfo(const std::string& key, float value)
 {
-  _field.name = key;
-  _field.type = "float";
+  _field = {"float", key};
   _value.resize(sizeof(value));
   memcpy(_value.data(), &value, sizeof(value));
 }
 MessageInfo::MessageInfo(const std::string& key, const std::string& value)
 {
-  _field.name = key;
-  _field.type = "char";
-  _field.array_length = value.length();
+  _field = {"char", key, static_cast<int>(value.length())};
   _value.resize(value.length());
   memcpy(_value.data(), value.data(), value.length());
 }
@@ -208,7 +229,7 @@ void MessageInfo::serialize(const DataWriteCB& writer, ULogMessageType type) con
     writer(reinterpret_cast<const unsigned char*>(_value.data()), _value.size());
   }
 }
-MessageFormat::MessageFormat(const uint8_t* msg)
+MessageFormat::MessageFormat(const uint8_t* msg, const std::map<const std::string, const MessageFormat> *existing_type_map)
 {
   const ulog_message_format_s* format = reinterpret_cast<const ulog_message_format_s*>(msg);
   // Format: <name>:<field0>;<field1>; ...
@@ -219,25 +240,38 @@ MessageFormat::MessageFormat(const uint8_t* msg)
   }
   _name = format_str.substr(0, colon);
   format_str = format_str.substr(colon + 1);
+  int offset = 0;
   while (!format_str.empty()) {
     const std::string::size_type semicolon = format_str.find(';');
     if (semicolon == std::string::npos) {
       throw ParsingException("Invalid message format (no ;)");  // invalid
     }
-    _fields.emplace_back(format_str.data(), semicolon);
+    Field f{format_str.data(), static_cast<int>(semicolon), offset, existing_type_map};
+    auto it = _fields.insert({f.name(), f});
+    offset += f.sizeBytes();
     format_str = format_str.substr(semicolon + 1);
   }
 }
-MessageFormat::MessageFormat(std::string name, std::vector<Field> fields)
+MessageFormat::MessageFormat(std::string name, std::map<std::string, Field> fields)
     : _name(std::move(name)), _fields(std::move(fields))
 {
 }
+
+int MessageFormat::sizeBytes() const
+{
+  int size = 0;
+  for (const auto it : _fields) {
+    size += it.second.sizeBytes();
+  }
+  return size;
+}
+
 void MessageFormat::serialize(const DataWriteCB& writer) const
 {
   std::string format_str = _name + ':';
 
   for (const auto& field : _fields) {
-    format_str += field.encode() + ';';
+    format_str += field.second.encode() + ';';
   }
 
   ulog_message_format_s format;
@@ -259,7 +293,7 @@ ParameterDefault::ParameterDefault(const uint8_t* msg)
   if (param_default->key_len > param_default->msg_size - 2) {
     throw ParsingException("Key too long");  // invalid
   }
-  _field = Field(param_default->key_value_str, param_default->key_len);
+  _field = Field(param_default->key_value_str, param_default->key_len, 0, {});
   initValues(param_default->key_value_str + param_default->key_len,
              param_default->msg_size - param_default->key_len - 2);
 }

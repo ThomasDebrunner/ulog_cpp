@@ -12,6 +12,7 @@
 #include <string>
 #include <variant>
 #include <vector>
+#include <map>
 
 #include "exception.hpp"
 #include "raw_messages.hpp"
@@ -46,14 +47,18 @@ class FileHeader {
   bool _has_flag_bits{true};
 };
 
-struct Field {
+class MessageFormat; // forward declaration
+
+class Field {
+ public:
   Field() = default;
-  Field(const char* str, int len);
+  Field(const char* str, int len, int offset,
+        const std::map<const std::string, const MessageFormat>* existing_type_map = nullptr);
 
   static const std::map<std::string, int> kBasicTypes;
 
   Field(std::string type_str, std::string name_str, int array_length_int = -1)
-      : type(std::move(type_str)), array_length(array_length_int), name(std::move(name_str))
+      : _type(std::move(type_str)), _array_length(array_length_int), _name(std::move(name_str))
   {
   }
 
@@ -61,12 +66,34 @@ struct Field {
 
   bool operator==(const Field& field) const
   {
-    return type == field.type && array_length == field.array_length && name == field.name;
+    return _type == field._type && _array_length == field._array_length && _name == field._name;
   }
 
-  std::string type;
-  int array_length{-1};  ///< -1 means not-an-array
-  std::string name;
+  inline const std::string& type() const {
+    return _type;
+  }
+
+  inline int arrayLength() const {
+    return _array_length;
+  }
+
+  inline int offsetInMessage() const {
+    return _offset_in_message_bytes;
+  }
+
+  inline const std::string& name() const {
+    return _name;
+  }
+
+  int sizeBytes() const;
+
+ private:
+  std::string _type;
+  int _array_length{-1};  ///< -1 means not-an-array
+  int _offset_in_message_bytes;
+  int _own_size_bytes;
+  const MessageFormat* _sub_type{nullptr};
+  std::string _name;
 };
 
 class Value {
@@ -86,7 +113,7 @@ class Value {
 
 class MessageInfo {
  public:
-  explicit MessageInfo(const uint8_t* msg, bool is_multi = false);
+  explicit MessageInfo(const uint8_t* msg, bool is_multi = false, const std::map<const std::string, const MessageFormat> *existing_type_map = nullptr);
 
   MessageInfo(Field field, std::vector<uint8_t> value, bool is_multi = false,
               bool continued = false);
@@ -120,12 +147,12 @@ class MessageInfo {
 
 class MessageFormat {
  public:
-  explicit MessageFormat(const uint8_t* msg);
+  explicit MessageFormat(const uint8_t* msg, const std::map<const std::string, const MessageFormat> *existing_type_map = nullptr);
 
-  explicit MessageFormat(std::string name, std::vector<Field> fields);
+  explicit MessageFormat(std::string name, std::map<std::string, Field> fields);
 
   const std::string& name() const { return _name; }
-  const std::vector<Field>& fields() const { return _fields; }
+  const std::map<std::string, Field>& fields() const { return _fields; }
 
   void serialize(const DataWriteCB& writer) const;
   bool operator==(const MessageFormat& format) const
@@ -133,9 +160,11 @@ class MessageFormat {
     return _name == format._name && _fields == format._fields;
   }
 
+  int sizeBytes() const;
+
  private:
   std::string _name;
-  std::vector<Field> _fields;
+  std::map<std::string, Field> _fields;
 };
 
 using Parameter = MessageInfo;

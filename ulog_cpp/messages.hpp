@@ -65,36 +65,45 @@ class Field {
     DOUBLE,
     CHAR,
     BOOL,
-    RECURSIVE,
+    NESTED,
   };
 
-  struct BasicTypeAttrs {
+  struct TypeAttributes {
     std::string name;
     BasicType type;
     int size;
+    const MessageFormat* nested_message{nullptr};
 
-    BasicTypeAttrs(std::string name, BasicType type_, int size_) : name(std::move(name)),
-          type(type_), size(size_) {}
+    TypeAttributes() = default;
+
+    TypeAttributes(std::string name, BasicType type_, int size_) : name(std::move(name)),
+          type(type_), size(size_), nested_message(nullptr) {}
   };
 
-  static const std::map<std::string, std::tuple<BasicType, BasicTypeAttrs>> kBasicTypes;
+  static const std::map<std::string, TypeAttributes> kBasicTypes;
 
-  Field(const char* str, int len, int offset,
-        const std::map<const std::string, const MessageFormat>* existing_type_map = nullptr);
+  Field(const char* str, int len);
 
   Field(std::string type_str, std::string name_str, int array_length_int = -1)
-      : _type_string(std::move(type_str)), _array_length(array_length_int), _name(std::move(name_str))
+      : _array_length(array_length_int), _name(std::move(name_str))
   {
+        auto it = kBasicTypes.find(type_str);
+        if (it != kBasicTypes.end()) {
+          _type = it->second;
+        }
+        // if not a basic type, set it to recursive
+        _type = TypeAttributes(type_str, BasicType::NESTED, 0);
   }
 
   std::string encode() const;
+
 
   bool operator==(const Field& field) const
   {
     return _type.name == field._type.name && _array_length == field._array_length && _name == field._name;
   }
 
-  inline const BasicTypeAttrs& type() const {
+  inline const TypeAttributes& type() const {
     return _type;
   }
 
@@ -110,13 +119,20 @@ class Field {
     return _name;
   }
 
-  int sizeBytes() const;
+  inline int sizeBytes() const;
+
+  inline bool definitionResolved() const {
+      return _offset_in_message_bytes >= 0 && (_type.type != BasicType::NESTED || _type.nested_message != nullptr);
+  };
+
+  void resolveDefinition(const std::map<std::string, MessageFormat>& existing_formats, int offset);
+
+  void resolveDefinition(int offset);
 
  private:
-  BasicTypeAttrs _type;
+  TypeAttributes _type;
   int _array_length{-1};  ///< -1 means not-an-array
-  int _offset_in_message_bytes;
-  const MessageFormat* _sub_type{nullptr};
+  int _offset_in_message_bytes{-1}; ///< default to begin of message. Gets filled on MessageFormat resolution
   std::string _name;
 };
 
@@ -127,11 +143,11 @@ class Value {
       float, double, bool, char, std::vector<int8_t>, std::vector<uint8_t>, std::vector<int16_t>,
       std::vector<uint16_t>, std::vector<int32_t>, std::vector<uint32_t>, std::vector<int64_t>,
       std::vector<uint64_t>, std::vector<float>, std::vector<double>, std::vector<bool>,
-      std::string, MessageFormat>;
+      std::string>;
 
-  Value(const Field& field_ref, std::vector<uint8_t>& backing_ref) : _field_ref(field_ref), _backing_ref(backing_ref) {}
+  Value(const Field& field_ref, const std::vector<uint8_t>& backing_ref) : _field_ref(field_ref), _backing_ref(backing_ref) {}
 
-  const NativeTypeVariant asNativeTypeVariant() const;
+  NativeTypeVariant asNativeTypeVariant() const;
 
   template <typename T>
   T as() const {
@@ -143,13 +159,13 @@ class Value {
   }
 
   template <typename T>
-  T operator T() {
+  operator T() {
     return as<T>();
   }
 
   private:
   const Field &_field_ref;
-  std::vector<uint8_t> &_backing_ref;
+  const std::vector<uint8_t> &_backing_ref;
 
   template <typename T>
   static T deserialize(const std::vector<uint8_t>& backing, int offset)
@@ -173,7 +189,7 @@ class Value {
 
 class MessageInfo {
  public:
-  explicit MessageInfo(const uint8_t* msg, bool is_multi = false, const std::map<const std::string, const MessageFormat> *existing_type_map = nullptr);
+  explicit MessageInfo(const uint8_t* msg, bool is_multi = false);
 
   MessageInfo(Field field, std::vector<uint8_t> value, bool is_multi = false,
               bool continued = false);
@@ -199,7 +215,7 @@ class MessageInfo {
 
  private:
   void initValues(const char* values, int len);
-  Field _field{};
+  Field _field;
   std::vector<uint8_t> _value;
   bool _continued{false};
   bool _is_multi{false};
@@ -207,9 +223,9 @@ class MessageInfo {
 
 class MessageFormat {
  public:
-  explicit MessageFormat(const uint8_t* msg, const std::map<const std::string, const MessageFormat> *existing_type_map = nullptr);
+  explicit MessageFormat(const uint8_t* msg);
 
-  explicit MessageFormat(std::string name, std::map<std::string, Field> fields);
+  explicit MessageFormat(std::string name, const std::vector<Field> &fields);
 
   const std::string& name() const { return _name; }
   const std::map<std::string, Field>& fields() const { return _fields; }
@@ -220,11 +236,14 @@ class MessageFormat {
     return _name == format._name && _fields == format._fields;
   }
 
+  void resolveDefinition(const std::map<std::string, MessageFormat>& existing_formats) const;
+
   int sizeBytes() const;
 
  private:
   std::string _name;
   std::map<std::string, Field> _fields;
+  std::vector<Field*> _fields_ordered;
 };
 
 using Parameter = MessageInfo;

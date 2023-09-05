@@ -8,6 +8,7 @@
 #include <cstring>
 #include <limits>
 #include <utility>
+#include <memory>
 
 #define CHECK_MSG_SIZE(size, min_required) \
   if ((size) < (min_required)) throw ParsingException("message too short")
@@ -55,7 +56,7 @@ MessageInfo::MessageInfo(const uint8_t* msg, bool is_multi) : _is_multi(is_multi
     if (info_multi->key_len > info_multi->msg_size - 2) {
       throw ParsingException("Key too long");  // invalid
     }
-    _field = Field(info_multi->key_value_str, info_multi->key_len, 0);
+    _field = Field(info_multi->key_value_str, info_multi->key_len);
     initValues(info_multi->key_value_str + info_multi->key_len,
                info_multi->msg_size - info_multi->key_len - 2);
   } else {
@@ -105,9 +106,16 @@ Field::Field(const char* str, int len)
   }
 }
 
-void Field::resolveDefinition(const std::map<std::string, MessageFormat>& existing_formats, int offset)
+void Field::resolveDefinition(const std::map<std::string, std::shared_ptr<MessageFormat>>& existing_formats, int offset)
 {
+    // if this is already resolved, do nothing
     if (definitionResolved()) {
+      return;
+    }
+
+    _offset_in_message_bytes = offset;
+    // if this is a basic type, we are done
+    if (_type.type != Field::BasicType::NESTED) {
       return;
     }
 
@@ -115,11 +123,10 @@ void Field::resolveDefinition(const std::map<std::string, MessageFormat>& existi
     if (it == existing_formats.end()) {
       throw ParsingException("Message format not found: " + _type.name);
     }
-    _type.nested_message = &it->second;
+    _type.nested_message = it->second;
     // recursively resolve nested type
     _type.nested_message->resolveDefinition(existing_formats);
     _type.size = _type.nested_message->sizeBytes();
-    _offset_in_message_bytes = offset;
 }
 
 void Field::resolveDefinition(int offset)
@@ -186,7 +193,7 @@ Value::NativeTypeVariant Value::asNativeTypeVariant() const
       case Field::BasicType::CHAR:
         return deserialize<char>(_backing_ref, _field_ref.offsetInMessage());
       case Field::BasicType::NESTED:
-        throw std::runtime_error("NOT IMPLEMENTED");
+        throw ParsingException("Can't get nested field as basic type. Field " + _field_ref.name());
     }
   } else {
     switch (_field_ref.type().type) {
@@ -227,9 +234,9 @@ Value::NativeTypeVariant Value::asNativeTypeVariant() const
         if (_backing_ref.size() < _field_ref.arrayLength()) {
           throw ParsingException("Decoding fault, memory too short");
         }
-        return std::string((const char *)(_backing_ref.data()), _field_ref.arrayLength());
+        return std::string(reinterpret_cast<const char *>(_backing_ref.data()), _field_ref.arrayLength());
       case Field::BasicType::NESTED:
-        throw std::runtime_error("NOT IMPLEMENTED");
+        throw ParsingException("Can't get nested field as basic type. Field " + _field_ref.name());
     }
   }
   return deserialize<uint8_t>(_backing_ref, _field_ref.offsetInMessage());
@@ -306,9 +313,9 @@ MessageFormat::MessageFormat(const uint8_t* msg)
     if (semicolon == std::string::npos) {
       throw ParsingException("Invalid message format (no ;)");  // invalid
     }
-    Field f{format_str.data(), static_cast<int>(semicolon)};
-    auto it = _fields.insert({f.name(), f});
-    _fields_ordered.push_back(&(it.first->second));
+    auto f = std::make_shared<Field>(format_str.data(), static_cast<int>(semicolon));
+    _fields.insert({f->name(), f});
+    _fields_ordered.push_back(f);
     format_str = format_str.substr(semicolon + 1);
   }
 }
@@ -316,24 +323,25 @@ MessageFormat::MessageFormat(std::string name, const std::vector<Field> &fields)
     : _name(std::move(name))
 {
   for (const auto& field : fields) {
-    auto inserted_field = _fields.insert({field.name(), field});
-    _fields_ordered.push_back(&(inserted_field.first->second));
+    auto f = std::make_shared<Field>(field);
+    _fields.insert({f->name(), f});
+    _fields_ordered.push_back(f);
   }
 }
 
 int MessageFormat::sizeBytes() const
 {
   int size = 0;
-  for (const auto it : _fields) {
-    size += it.second.sizeBytes();
+  for (const auto &it : _fields) {
+    size += it.second->sizeBytes();
   }
   return size;
 }
 
-void MessageFormat::resolveDefinition(const std::map<std::string, MessageFormat>& existing_formats) const
+void MessageFormat::resolveDefinition(const std::map<std::string, std::shared_ptr<MessageFormat>>& existing_formats) const
 {
   int offset = 0;
-  for (auto& field : _fields_ordered) {
+  for (const auto& field : _fields_ordered) {
     if (!field->definitionResolved()) {
       field->resolveDefinition(existing_formats, offset);
     }
@@ -346,7 +354,7 @@ void MessageFormat::serialize(const DataWriteCB& writer) const
   std::string format_str = _name + ':';
 
   for (const auto& field : _fields) {
-    format_str += field.second.encode() + ';';
+    format_str += field.second->encode() + ';';
   }
 
   ulog_message_format_s format;
@@ -368,7 +376,7 @@ ParameterDefault::ParameterDefault(const uint8_t* msg)
   if (param_default->key_len > param_default->msg_size - 2) {
     throw ParsingException("Key too long");  // invalid
   }
-  _field = Field(param_default->key_value_str, param_default->key_len, 0);
+  _field = Field(param_default->key_value_str, param_default->key_len);
   initValues(param_default->key_value_str + param_default->key_len,
              param_default->msg_size - param_default->key_len - 2);
 }

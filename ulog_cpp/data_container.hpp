@@ -22,7 +22,7 @@ class DataContainer : public DataHandlerInterface {
 
   class Subscription {
    public:
-    Subscription(AddLoggedMessage add_logged_message, std::vector<Data> samples, MessageFormat &format_ref)
+    Subscription(AddLoggedMessage add_logged_message, std::vector<Data> samples)
         : _add_logged_message(std::move(add_logged_message)), _samples(std::move(samples)) {
     }
 
@@ -70,7 +70,7 @@ class DataContainer : public DataHandlerInterface {
   {
     return _message_info_multi;
   }
-  const std::map<std::string, MessageFormat>& messageFormats() const { return _message_formats; }
+  const std::map<std::string, std::shared_ptr<MessageFormat>>& messageFormats() const { return _message_formats; }
   const std::map<std::string, Parameter>& initialParameters() const { return _initial_parameters; }
   const std::map<std::string, ParameterDefault>& defaultParameters() const
   {
@@ -94,7 +94,7 @@ class DataContainer : public DataHandlerInterface {
   FileHeader _file_header;
   std::map<std::string, MessageInfo> _message_info;
   std::map<std::string, std::vector<std::vector<MessageInfo>>> _message_info_multi;
-  std::map<std::string, MessageFormat> _message_formats;
+  std::map<std::string, std::shared_ptr<MessageFormat>> _message_formats;
   std::map<std::string, Parameter> _initial_parameters;
   std::map<std::string, ParameterDefault> _default_parameters;
   std::vector<Parameter> _changed_parameters;

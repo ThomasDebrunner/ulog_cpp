@@ -83,7 +83,7 @@ class SimpleWriter {
    * @param name format name, must match the regex: "[a-zA-Z0-9_\\-/]+"
    * @param fields message fields, names must match the regex: "[a-z0-9_]+"
    */
-  void writeMessageFormat(const std::string& name, const std::map<std::string, Field>& fields);
+  void writeMessageFormat(const std::string& name, const std::vector<Field>& fields);
 
   /**
    * Call this to complete the header (after calling the above methods).

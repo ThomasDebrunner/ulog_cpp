@@ -18,9 +18,13 @@ void DataContainer::error(const std::string& msg, bool is_recoverable)
   }
   _parsing_errors.push_back(msg);
 }
-
 void DataContainer::headerComplete()
 {
+  // try to resolve all message formats
+  for (auto &it : _message_formats) {
+    auto &message_format = it.second;
+    message_format->resolveDefinition(_message_formats);
+  }
   _header_complete = true;
 }
 void DataContainer::fileHeader(const FileHeader& header)
@@ -51,7 +55,7 @@ void DataContainer::messageFormat(const MessageFormat& message_format)
   if (_message_formats.find(message_format.name()) != _message_formats.end()) {
     throw ParsingException("Duplicate message format");
   }
-  _message_formats.insert({message_format.name(), message_format});
+  _message_formats.insert({message_format.name(), std::make_shared<MessageFormat>(message_format)});
 }
 void DataContainer::parameter(const Parameter& parameter)
 {

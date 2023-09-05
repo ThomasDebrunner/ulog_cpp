@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 #include <map>
+#include <memory>
 
 #include "exception.hpp"
 #include "raw_messages.hpp"
@@ -72,7 +73,7 @@ class Field {
     std::string name;
     BasicType type;
     int size;
-    const MessageFormat* nested_message{nullptr};
+    std::shared_ptr<MessageFormat> nested_message{nullptr};
 
     TypeAttributes() = default;
 
@@ -82,9 +83,11 @@ class Field {
 
   static const std::map<std::string, TypeAttributes> kBasicTypes;
 
+  Field() = default;
+
   Field(const char* str, int len);
 
-  Field(std::string type_str, std::string name_str, int array_length_int = -1)
+  Field(const std::string &type_str, std::string name_str, int array_length_int = -1)
       : _array_length(array_length_int), _name(std::move(name_str))
   {
         auto it = kBasicTypes.find(type_str);
@@ -125,7 +128,7 @@ class Field {
       return _offset_in_message_bytes >= 0 && (_type.type != BasicType::NESTED || _type.nested_message != nullptr);
   };
 
-  void resolveDefinition(const std::map<std::string, MessageFormat>& existing_formats, int offset);
+  void resolveDefinition(const std::map<std::string, std::shared_ptr<MessageFormat>>& existing_formats, int offset);
 
   void resolveDefinition(int offset);
 
@@ -228,7 +231,7 @@ class MessageFormat {
   explicit MessageFormat(std::string name, const std::vector<Field> &fields);
 
   const std::string& name() const { return _name; }
-  const std::map<std::string, Field>& fields() const { return _fields; }
+  const std::map<std::string, std::shared_ptr<Field>>& fields() const { return _fields; }
 
   void serialize(const DataWriteCB& writer) const;
   bool operator==(const MessageFormat& format) const
@@ -236,14 +239,14 @@ class MessageFormat {
     return _name == format._name && _fields == format._fields;
   }
 
-  void resolveDefinition(const std::map<std::string, MessageFormat>& existing_formats) const;
+  void resolveDefinition(const std::map<std::string, std::shared_ptr<MessageFormat>>& existing_formats) const;
 
   int sizeBytes() const;
 
  private:
   std::string _name;
-  std::map<std::string, Field> _fields;
-  std::vector<Field*> _fields_ordered;
+  std::map<std::string, std::shared_ptr<Field>> _fields;
+  std::vector<std::shared_ptr<Field>> _fields_ordered;
 };
 
 using Parameter = MessageInfo;

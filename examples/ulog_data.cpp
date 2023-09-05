@@ -46,7 +46,7 @@ int main(int argc, char** argv)
   // Read out some data
   // TODO: create a simpler API for this
 
-  const auto& subscription = data_container->subscriptions().at("multirotor_motor_limits");
+  //const auto& subscription = data_container->subscriptions().at("multirotor_motor_limits");
 
 //  const std::string message = "multirotor_motor_limits";
 //  printf("%s timestamps: ", message.c_str());

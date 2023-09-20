@@ -148,15 +148,66 @@ class Value {
       std::vector<uint64_t>, std::vector<float>, std::vector<double>, std::vector<bool>,
       std::string>;
 
+  template <typename T>
+  struct is_vector : std::false_type {};
+  template <typename T>
+  struct is_vector<std::vector<T>> : std::true_type {};
+
+  template <typename T>
+  struct is_string : std::is_same<std::decay_t<T>, std::string> {};
+
   Value(const Field& field_ref, const std::vector<uint8_t>& backing_ref) : _field_ref(field_ref), _backing_ref(backing_ref) {}
 
   NativeTypeVariant asNativeTypeVariant() const;
 
   template <typename T>
   T as() const {
-    T res;
-    std::visit([](auto&& arg) {
-      T res = static_cast<T>(arg);
+      T res;
+    std::visit([&res](auto&& arg) {
+      using NativeType = std::decay_t<decltype(arg)>;
+      using ReturnType = T;
+      if constexpr (is_string<NativeType>::value || is_string<ReturnType>::value) {
+        // there is a string involved. Only allowed when both are string
+        if constexpr (is_string<NativeType>::value && is_string<ReturnType>::value) {
+          // both are string
+          res = arg;
+        } else {
+          // one is string, the other is not
+          throw ParsingException("Assign strings and non-string types");
+        }
+      } else if constexpr (is_vector<NativeType>::value) {
+        // this is natively a vector
+        if constexpr (is_vector<ReturnType>::value) {
+          // return type is also vector
+          if constexpr (std::is_same<typename NativeType::value_type, typename ReturnType::value_type>::value) {
+            // return type is same as native type
+            res = arg;
+          } else {
+            // return type is different from native type, but a vector
+            res.resize(arg.size());
+            for (std::size_t i=0; i<arg.size(); i++) {
+                    res[i] = static_cast<typename ReturnType::value_type>(arg[i]);
+            }
+          }
+        } else {
+          // return type is not a vector, just return first element
+          if (arg.size() > 0) {
+                res = static_cast<ReturnType>(arg[0]);
+          } else {
+                throw ParsingException("Cannot convert empty vector to non-vector type");
+          }
+        }
+      } else {
+        // this is natively not a vector
+        if constexpr (is_vector<ReturnType>::value) {
+          // return type is a vector
+          res.resize(1);
+          res[0] = static_cast<typename ReturnType::value_type>(arg);
+        } else {
+          // return type is not a vector
+          res = static_cast<ReturnType>(arg);
+        }
+      }
     }, asNativeTypeVariant());
     return res;
   }
@@ -174,8 +225,10 @@ class Value {
   static T deserialize(const std::vector<uint8_t>& backing, int offset)
   {
     T v;
-    if (backing.size() - offset < sizeof(v)) throw ParsingException("Unexpected data type size");
-    memcpy(&v, backing.data(), sizeof(v));
+    if (backing.size() - offset < sizeof(v)) {
+          throw ParsingException("Unexpected data type size");
+    }
+    memcpy(&v, backing.data() + offset, sizeof(v));
     return v;
   }
 
@@ -231,7 +284,7 @@ class MessageFormat {
   explicit MessageFormat(std::string name, const std::vector<Field> &fields);
 
   const std::string& name() const { return _name; }
-  const std::map<std::string, std::shared_ptr<Field>>& fields() const { return _fields; }
+  const std::map<std::string, std::shared_ptr<Field>>& fieldMap() const { return _fields; }
 
   void serialize(const DataWriteCB& writer) const;
   bool operator==(const MessageFormat& format) const
@@ -242,6 +295,21 @@ class MessageFormat {
   void resolveDefinition(const std::map<std::string, std::shared_ptr<MessageFormat>>& existing_formats) const;
 
   int sizeBytes() const;
+
+  std::vector<std::shared_ptr<Field>> fields() const { return _fields_ordered; }
+
+  std::vector<std::string> fieldNames() const {
+    std::vector<std::string> names;
+    for (auto& field : _fields_ordered) {
+      names.push_back(field->name());
+    }
+    return names;
+  }
+
+  std::shared_ptr<Field> field(const std::string& name) const {
+    return _fields.at(name);
+  }
+
 
  private:
   std::string _name;

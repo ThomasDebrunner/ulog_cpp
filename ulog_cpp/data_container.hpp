@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <vector>
 #include <memory>
-
+#include "subscription.hpp"
 #include "data_handler_interface.hpp"
 
 namespace ulog_cpp {
@@ -17,30 +17,6 @@ class DataContainer : public DataHandlerInterface {
   enum class StorageConfig {
     Header,   ///< keep header in memory
     FullLog,  ///< keep full log in memory
-  };
-  
-
-  class Subscription {
-   public:
-    Subscription(AddLoggedMessage add_logged_message, std::vector<Data> samples)
-        : _add_logged_message(std::move(add_logged_message)), _samples(std::move(samples)) {
-    }
-
-    void addSample(const Data &sample) {
-      _samples.emplace_back(sample);
-    }
-
-    const AddLoggedMessage& addLoggedMessage() const {
-      return _add_logged_message;
-    }
-
-    const std::vector<Data>& rawSamples() const {
-      return _samples;
-    }
-
-   private:
-    AddLoggedMessage _add_logged_message;
-    std::vector<Data> _samples;
   };
 
   explicit DataContainer(StorageConfig storage_config);
@@ -80,8 +56,20 @@ class DataContainer : public DataHandlerInterface {
   const std::vector<Logging>& logging() const { return _logging; }
   const std::vector<Dropout>& dropouts() const { return _dropouts; }
 
-  const std::map<std::string, std::shared_ptr<Subscription>>& subscriptions() {
+  const std::map<std::string, std::shared_ptr<Subscription>>& subscriptionsByName() {
     return _subscriptions_by_name;
+  }
+
+  std::vector<std::string> subscriptionNames() const {
+    std::vector<std::string> names;
+    for (const auto& kv : _subscriptions_by_name) {
+      names.push_back(kv.first);
+    }
+    return names;
+  }
+
+  std::shared_ptr<Subscription> subscription(const std::string& name) {
+    return _subscriptions_by_name.at(name);
   }
 
  private:

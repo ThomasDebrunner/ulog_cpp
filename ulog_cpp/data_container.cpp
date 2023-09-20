@@ -81,11 +81,13 @@ void DataContainer::addLoggedMessage(const AddLoggedMessage& add_logged_message)
     throw ParsingException("Duplicate AddLoggedMessage message ID");
   }
 
-  if (_message_formats.find(add_logged_message.messageName()) == _message_formats.end()) {
+  auto format_iter = _message_formats.find(add_logged_message.messageName());
+  if (format_iter == _message_formats.end()) {
     throw ParsingException("AddLoggedMessage message format not found");
   }
 
-  auto new_subscription = std::make_shared<Subscription>(add_logged_message, std::vector<Data>{});
+  auto new_subscription = std::make_shared<Subscription>(add_logged_message,
+                                                         std::vector<Data>{}, format_iter->second);
   _subscriptions_by_message_id.insert({add_logged_message.msgId(), new_subscription});
 
   const auto key = add_logged_message.messageName() + "_" + std::to_string(add_logged_message.multiId());
@@ -107,7 +109,7 @@ void DataContainer::data(const Data& data)
   if (iter == _subscriptions_by_message_id.end()) {
     throw ParsingException("Invalid subscription");
   }
-  iter->second->addSample(std::move(data));
+  iter->second->emplaceSample(std::move(data));
 }
 void DataContainer::dropout(const Dropout& dropout)
 {
